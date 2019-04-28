@@ -6,19 +6,26 @@
 package dao.interfaces;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  *
  * @author Islam El-Rougy
  */
-public interface GeneralDao
-{
-    public int countAll(String tableName);
-    public <T,G> T retrievebyId(G id, String tableName);
-    public <T> List<T> retrieveAll(String tableName);
-    public <T, G> List<T> retrieveAllBySingleProperty(String tableName, String columnName, G retrievalProperty);
-    public <T, G> T retrieveByUniqueKey(String tableName, String columnName, G retrievalProperty);
-    public <T> void insert(T entity);
-    public <T> void deleteById(T userId, String tableName);
+public interface GeneralDao<Entity, Id> {
+
+    public int countAll();
+
+    public Entity retrievebyId(Id id);
+
+    public Entity retrieveByUniqueKey(String columnName, Object retrievalProperty);
+
+    public List<Entity> retrieveAll();
+
+    public List<Entity> retrieveAllBySingleProperty(String columnName, Object retrievalProperty);
+
+    public void insert(Entity entity);
+
+    public void deleteById(Id userId);
+
+    public void deleteByObject(Entity entity);
 }

@@ -6,101 +6,133 @@
 package dao.implementation;
 
 import dao.interfaces.GeneralDao;
-import entity.Buyer;
-import entity.Product;
-import java.util.HashMap;
+import java.lang.reflect.Field;
 import java.util.List;
-import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.sql.DataSource;
+import org.springframework.core.GenericTypeResolver;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.BeanPropertySqlParameterSource;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
-import rowmappers.BuyerBuyProductRowMapper;
-import rowmappers.UserRowMapper;
 
 /**
  *
  * @author Islam El-Rougy
  */
-public abstract class GeneralDaoImpl implements GeneralDao
-{
-    protected JdbcTemplate jdbcTemplate;
-    protected SimpleJdbcInsert simpleJdbcInsert;
-    protected static Map<String, RowMapper> tableMap = new HashMap<>();
-    
-    static
-    {
-        tableMap.put("user", new UserRowMapper());
-        tableMap.put("buyer", new BeanPropertyRowMapper<>(Buyer.class));
-        tableMap.put("product", new BeanPropertyRowMapper<>(Product.class));
-        tableMap.put("buyer_buy_product", new BuyerBuyProductRowMapper());
+public class GeneralDaoImpl<Entity, Id> implements GeneralDao<Entity, Id> {
+
+    private JdbcTemplate jdbcTemplate;
+    private SimpleJdbcInsert simpleJdbcInsert;
+
+    public void setDataSource(DataSource dataSource) {
+        jdbcTemplate = new JdbcTemplate(dataSource);
+        simpleJdbcInsert = new SimpleJdbcInsert(dataSource)
+                .withTableName(getTableName())
+                .usingGeneratedKeyColumns("id");
     }
-    
-    
+
+    protected void update(String updateQuery, Object[] updateQueryParameters) {
+        jdbcTemplate.update(updateQuery, updateQueryParameters);
+    }
+
+    private Class getEntityClass() {
+        return (Class<Entity>) GenericTypeResolver
+                .resolveTypeArgument(getClass(),
+                        GeneralDaoImpl.class);
+    }
+
+    private String getTableName() {
+        return getEntityClass().getName();
+    }
+
+    private RowMapper getTableRowMapper() {
+        RowMapper rowMapper = null;
+        try {
+            rowMapper = (RowMapper) Class.forName(getTableName() + "RowMapper").newInstance();
+        } catch (ClassNotFoundException ex) {
+            Logger.getLogger(GeneralDaoImpl.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (InstantiationException ex) {
+            Logger.getLogger(GeneralDaoImpl.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (IllegalAccessException ex) {
+            Logger.getLogger(GeneralDaoImpl.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        if (rowMapper == null) {
+            rowMapper = new BeanPropertyRowMapper(getEntityClass());
+        }
+        return rowMapper;
+    }
+
     @Override
-    public int countAll(String tableName)
-    {
-        String countQuery = "select count(*) from " + tableName;
+    public int countAll() {
+        String countQuery = "select count(*) from " + getTableName();
         int rowCount = jdbcTemplate.queryForObject(countQuery, Integer.class);
         return rowCount;
     }
 
     @Override
-    public <T, G> T retrievebyId(G id, String tableName)
-    {
-        RowMapper rowMapper = tableMap.get(tableName);
-        String retrievalQuery = "select * from " + tableName + " where id = ?";
-        T retrievedEntity = (T) jdbcTemplate.queryForObject(retrievalQuery, new Object[]{id}, rowMapper);
+    public Entity retrievebyId(Id id) {
+        String retrievalQuery = "select * from " + getTableName() + " where id = ?";
+        Entity retrievedEntity = (Entity) jdbcTemplate.queryForObject(retrievalQuery,
+                new Object[]{id}, getTableRowMapper());
         return retrievedEntity;
     }
 
     @Override
-    public <T> List<T> retrieveAll(String tableName)
-    {
-        RowMapper rowMapper = tableMap.get(tableName);
-        String retrievalQuery = "select * from " + tableName;
-        List<T> retrievedList = jdbcTemplate.query(retrievalQuery, rowMapper);
+    public Entity retrieveByUniqueKey(String columnName, Object retrievalProperty) {
+        String retrievalQuery = "select * from " + getTableName() + " where " + columnName + " = ?";
+        Entity retrievedEntity = (Entity) jdbcTemplate.queryForObject(retrievalQuery,
+                new Object[]{retrievalProperty}, getTableRowMapper());
+        return retrievedEntity;
+    }
+
+    @Override
+    public List<Entity> retrieveAll() {
+        String retrievalQuery = "select * from " + getTableName();
+        List<Entity> retrievedList = jdbcTemplate
+                .query(retrievalQuery, getTableRowMapper());
         return retrievedList;
     }
 
     @Override
-    public <T> void insert(T entity)
-    {
+    public List<Entity> retrieveAllBySingleProperty(String columnName, Object retrievalProperty) {
+        String retrievalQuery = "select * from " + getTableName() + " where " + columnName + " = ?";
+        Object[] retrievalQueryParameters = new Object[]{retrievalProperty};
+        List<Entity> retrievedList = jdbcTemplate.query(retrievalQuery,
+                retrievalQueryParameters, getTableRowMapper());
+        return retrievedList;
+    }
+
+    @Override
+    public void insert(Entity entity) {
         SqlParameterSource parameters = new BeanPropertySqlParameterSource(entity);
         simpleJdbcInsert.execute(parameters);
     }
 
     @Override
-    public <T> void deleteById(T userId, String tableName)
-    {
-       String deletionQuery = "delete from " + tableName + " where id = ?";
-       Object[] deletionQueryParameters = new Object[]{userId};
-       jdbcTemplate.update(deletionQuery, deletionQueryParameters);
+    public void deleteById(Id userId) {
+        String deletionQuery = "delete from " + getTableName() + " where id = ?";
+        Object[] deletionQueryParameters = new Object[]{userId};
+        jdbcTemplate.update(deletionQuery, deletionQueryParameters);
     }
 
     @Override
-    public <T, G> List<T> retrieveAllBySingleProperty(String tableName, String columnName, G retrievalProperty)
-    {
-        RowMapper rowMapper = tableMap.get(tableName);
-        String retrievalQuery = "select * from " + tableName + " where " + columnName + " = ?";
-        Object[] retrievalQueryParameters = new Object[]{retrievalProperty};
-        List<T> retrievedList = jdbcTemplate.query(retrievalQuery, retrievalQueryParameters, rowMapper);
-        return retrievedList;
+    public void deleteByObject(Entity entity) {
+        try {
+            Field field = getEntityClass().getDeclaredField("id");
+            field.setAccessible(true);
+            Id id = (Id) field.get(entity);
+            deleteById(id);
+        } catch (NoSuchFieldException ex) {
+            Logger.getLogger(GeneralDaoImpl.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (SecurityException ex) {
+            Logger.getLogger(GeneralDaoImpl.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (IllegalAccessException ex) {
+            Logger.getLogger(GeneralDaoImpl.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
-    @Override
-    public <T, G> T retrieveByUniqueKey(String tableName, String columnName, G retrievalProperty)
-    {
-        RowMapper rowMapper = tableMap.get(tableName);
-        String retrievalQuery = "select * from " + tableName + " where " + columnName + " = ?";
-        T retrievedEntity = (T) jdbcTemplate.queryForObject(retrievalQuery, new Object[]{retrievalProperty}, rowMapper);
-        return retrievedEntity;
-    }
-
-    
-    
-    
-    
 }

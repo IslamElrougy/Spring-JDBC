@@ -13,9 +13,9 @@ import java.util.List;
  *
  * @author Islam El-Rougy
  */
-public interface UserDao extends GeneralDao
-{
+public interface UserDao extends GeneralDao<User, Integer> {
+
     public void update(User user);
-    public void deleteByObject(User user);
+
     public List<User> retrieveAllByRegistrationDate(Date registrationDate);
 }
